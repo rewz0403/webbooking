@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cineplex Premium Booking</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://cdn.omise.co/omise.js"></script>
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyCtJI4NkBecxe1RX2y-R0UFgxPZaTNrtWE", // ⚠️ ใช้ Key ของคุณ
+            authDomain: "theater-5accf.firebaseapp.com",
+            projectId: "theater-5accf",
+            storageBucket: "theater-5accf.firebasestorage.app",
+            messagingSenderId: "648787243978",
+            appId: "1:648787243978:web:a1f14c8851df09bfd01533"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        const API_BASE_URL = 'http://localhost:3000';
+        Omise.setPublicKey("pkey_test_63cqbxr2v8h5z0zgks6"); // 🔴 ใส่ Public Key ของคุณ
+    </script>
+
+    <style>
+        :root { --primary-bg: #0f172a; --secondary-bg: #1e293b; --accent: #3b82f6; --accent-glow: rgba(59, 130, 246, 0.5); }
+        body { font-family: 'Kanit', sans-serif; background-color: var(--primary-bg); color: #e2e8f0; }
+        ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-track { background: var(--primary-bg); }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; } ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        .seat { width: 32px; height: 32px; background-color: #334155; border-radius: 8px 8px 4px 4px; cursor: pointer; position: relative; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+        .seat:hover:not(.occupied) { background-color: #64748b; transform: translateY(-2px); }
+        .seat.selected { background-color: var(--accent); box-shadow: 0 0 10px var(--accent-glow); color: white; border: 1px solid #60a5fa; }
+        .seat.occupied { background-color: #1e293b; cursor: not-allowed; opacity: 0.4; border: 1px solid #334155; }
+        .seat.occupied::before { content: '×'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #64748b; font-size: 14px; }
+        .screen-container { perspective: 800px; display: flex; justify-content: center; margin-bottom: 2rem; }
+        .screen { background: linear-gradient(to bottom, #94a3b8 0%, transparent 100%); height: 40px; width: 80%; transform: rotateX(-10deg) scale(0.95); box-shadow: 0 25px 30px -5px rgba(255, 255, 255, 0.1); border-radius: 50% 50% 0 0 / 20px 20px 0 0; opacity: 0.6; }
+        #toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; }
+        .toast { background: rgba(30, 41, 59, 0.95); backdrop-filter: blur(8px); border-left: 4px solid; color: white; padding: 16px 24px; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); transform: translateX(100%); transition: transform 0.3s ease; display: flex; align-items: center; gap: 12px; min-width: 300px; }
+        .toast.show { transform: translateX(0); } .toast.success { border-color: #10b981; } .toast.success i { color: #10b981; } .toast.error { border-color: #ef4444; } .toast.error i { color: #ef4444; }
+        .skeleton { background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+        .qr-used { filter: grayscale(100%) opacity(0.3); }
+        .status-used { color: #9ca3af !important; border-color: #4b5563 !important; background-color: rgba(75, 85, 99, 0.1) !important; }
+        
+        .payment-option { cursor: pointer; border: 1px solid rgba(255,255,255,0.1); transition: all 0.2s; }
+        .payment-option:hover { border-color: #3b82f6; background-color: rgba(59, 130, 246, 0.1); }
+    </style>
+</head>
+<body>
+
+    <div id="toast-container"></div>
+
+    <nav class="fixed top-0 w-full z-40 bg-[#0f172a]/80 backdrop-blur-md border-b border-white/5">
+        <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-blue-600/30">C</div>
+                <h1 class="text-xl font-semibold tracking-wide text-white">CINEPLEX</h1>
+            </div>
+            <div class="hidden md:flex gap-6 text-sm font-medium text-gray-400">
+                <a href="#" class="hover:text-white transition">หน้าแรก</a>
+                <a href="#" class="hover:text-white transition">ภาพยนตร์</a>
+                <a href="promotion.html" class="hover:text-white transition">โปรโมชั่น</a>
+            </div>
+            <div class="flex items-center gap-4">
+                <div id="auth-buttons" class="hidden flex gap-3">
+                    <button onclick="openAuthModal('login')" class="text-sm text-gray-300 hover:text-white">เข้าสู่ระบบ</button>
+                    <button onclick="openAuthModal('register')" class="text-sm bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-medium shadow-lg shadow-blue-600/20 transition">สมัครสมาชิก</button>
+                </div>
+                <div id="user-profile" class="hidden flex items-center gap-3 relative cursor-pointer select-none" onclick="toggleUserDropdown(event)">
+                    <div class="text-right hidden sm:block">
+                        <p id="user-email-display" class="text-xs text-gray-300 font-medium"></p>
+                        <p class="text-[10px] text-blue-400">Member</p>
+                    </div>
+                    <div class="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 p-[2px]">
+                        <div class="w-full h-full rounded-full bg-[#0f172a] flex items-center justify-center overflow-hidden">
+                            <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="User" class="w-full h-full">
+                        </div>
+                    </div>
+                    <div id="user-dropdown" class="absolute right-0 top-full mt-2 w-48 bg-[#1e293b] border border-white/10 rounded-xl shadow-xl overflow-hidden hidden z-50">
+                        <button onclick="openHistoryModal()" class="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-white/5 hover:text-white transition flex items-center border-b border-white/5">
+                            <i class="fas fa-ticket-alt mr-3 text-blue-400"></i> ประวัติการจอง
+                        </button>
+                        <button onclick="logout()" class="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-white/5 transition flex items-center">
+                            <i class="fas fa-sign-out-alt mr-3"></i> ออกจากระบบ
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div id="auth-modal" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onclick="closeAuthModal()"></div>
+        <div class="absolute inset-0 flex items-center justify-center p-4">
+            <div class="bg-[#1e293b] w-full max-w-md p-8 rounded-2xl shadow-2xl border border-white/10 animate-fade-in relative">
+                <button onclick="closeAuthModal()" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fas fa-times"></i></button>
+                <h2 id="auth-title" class="text-2xl font-bold text-white mb-6 text-center">เข้าสู่ระบบ</h2>
+                <form id="auth-form" class="space-y-4">
+                    <div><label class="text-xs text-gray-400 uppercase ml-1">อีเมล</label><input type="email" id="auth-email" class="w-full bg-[#0f172a] border border-white/10 rounded-xl p-3 text-white focus:border-blue-500 outline-none" required></div>
+                    <div><label class="text-xs text-gray-400 uppercase ml-1">รหัสผ่าน</label><input type="password" id="auth-password" class="w-full bg-[#0f172a] border border-white/10 rounded-xl p-3 text-white focus:border-blue-500 outline-none" required></div>
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-600/20 mt-2">ยืนยัน</button>
+                </form>
+                <div class="mt-6 text-center"><p class="text-sm text-gray-400"><span id="auth-switch-text">ยังไม่มีบัญชี?</span> <button onclick="toggleAuthMode()" class="text-blue-400 hover:text-blue-300 font-medium ml-1 underline">สมัครสมาชิก</button></p></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="history-modal" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onclick="closeHistoryModal()"></div>
+        <div class="absolute inset-0 flex items-center justify-center p-4">
+            <div class="bg-[#1e293b] w-full max-w-2xl h-[80vh] rounded-2xl shadow-2xl border border-white/10 animate-fade-in relative flex flex-col">
+                <div class="p-6 border-b border-white/10 flex justify-between items-center">
+                    <h3 class="text-xl font-bold text-white"><i class="fas fa-ticket-alt text-blue-500 mr-2"></i> บัตรภาพยนตร์ของฉัน</h3>
+                    <button onclick="closeHistoryModal()" class="text-gray-400 hover:text-white"><i class="fas fa-times text-xl"></i></button>
+                </div>
+                <div id="history-list" class="flex-1 overflow-y-auto p-6 space-y-4"><p class="text-center text-gray-500 mt-10">กำลังโหลดข้อมูล...</p></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="ticket-modal" class="fixed inset-0 z-[60] hidden">
+        <div class="absolute inset-0 bg-black/90 backdrop-blur-md transition-opacity" onclick="closeTicketModal()"></div>
+        <div class="absolute inset-0 flex items-center justify-center p-4">
+            <div class="relative w-full max-w-sm rounded-3xl shadow-2xl animate-fade-in overflow-hidden bg-black text-white">
+                <img id="ticket-bg-image" class="absolute inset-0 w-full h-full object-cover opacity-40 blur-sm">
+                <div class="absolute inset-0 bg-gradient-to-b from-black/60 via-black/80 to-black"></div>
+                <div class="relative z-10">
+                    <div class="p-6 text-center border-b border-white/10"><h2 class="text-xl font-bold tracking-[0.2em] text-blue-400">E-TICKET</h2><p class="text-[10px] text-gray-400 mt-1 uppercase tracking-wider">CINEPLEX MEMBER ACCESS</p></div>
+                    <div class="p-6">
+                        <div class="space-y-5">
+                            <div><p class="text-[10px] text-gray-400 uppercase tracking-widest mb-1">Movie</p><h3 class="text-2xl font-bold leading-tight text-white drop-shadow-lg" id="show-ticket-movie">-</h3></div>
+                            <div class="flex justify-between"><div><p class="text-[10px] text-gray-400 uppercase tracking-widest mb-1">Time</p><p class="font-semibold text-lg text-blue-100" id="show-ticket-time">-</p></div><div class="text-right"><p class="text-[10px] text-gray-400 uppercase tracking-widest mb-1">Theater</p><p class="font-semibold text-lg text-blue-100" id="show-ticket-theater">-</p></div></div>
+                            <div class="bg-white/10 backdrop-blur-md p-4 rounded-xl flex justify-between items-center border border-white/10"><div><p class="text-[10px] text-gray-300 uppercase tracking-widest">Seats</p><p class="text-2xl font-bold text-blue-400" id="show-ticket-seats">-</p></div></div>
+                        </div>
+                        <div class="my-8 border-b-2 border-dashed border-gray-600/50 relative"><div class="absolute -left-9 -top-3 w-6 h-6 bg-[#000000] rounded-full"></div><div class="absolute -right-9 -top-3 w-6 h-6 bg-[#000000] rounded-full"></div></div>
+                        <div class="text-center"><div class="bg-white p-2 rounded-lg inline-block shadow-lg"><img id="show-ticket-qr" src="" class="w-32 h-32 object-contain"></div><p class="text-xs text-gray-400 font-mono mt-3" id="show-ticket-ref">-</p><p id="ticket-status-display" class="text-[10px] font-bold mt-2 tracking-wider"></p></div>
+                    </div>
+                    <button onclick="closeTicketModal()" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 font-bold transition uppercase tracking-widest">Close Ticket</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <header class="relative pt-32 pb-20 overflow-hidden">
+        <div class="absolute inset-0 z-0"><div id="hero-bg" class="absolute inset-0 bg-cover bg-center transition-all duration-1000 scale-110 blur-sm opacity-40"></div><div class="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-[#0f172a]/80 to-transparent"></div></div>
+        <div class="container mx-auto px-6 relative z-10">
+            <div class="max-w-2xl animate-fade-in"><span class="inline-block py-1 px-3 rounded-full bg-blue-600/20 text-blue-400 text-xs font-bold mb-4 border border-blue-600/30">NOW SHOWING</span><h2 id="hero-title" class="text-4xl md:text-6xl font-bold text-white mb-6 leading-tight drop-shadow-xl">Loading...</h2><p id="hero-synopsis" class="text-gray-300 text-lg mb-8 line-clamp-3 leading-relaxed"></p><button onclick="scrollToMovies()" class="group bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-xl font-semibold shadow-xl shadow-blue-600/20 transition-all flex items-center gap-2"><i class="fas fa-ticket-alt"></i> จองตั๋วภาพยนตร์</button></div>
+        </div>
+    </header>
+
+    <section id="movies-list" class="py-12 container mx-auto px-6">
+        <div class="flex items-center justify-between mb-8"><h3 class="text-2xl font-bold text-white flex items-center gap-3"><span class="w-1 h-8 bg-blue-600 rounded-full"></span> โปรแกรมฉาย</h3></div>
+        <div id="movies-grid" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6"></div>
+    </section>
+
+    <div id="booking-modal" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onclick="closeModal()"></div>
+        <div class="absolute inset-0 flex items-center justify-center p-4">
+            <div class="bg-[#1e293b] w-full max-w-5xl h-[90vh] rounded-2xl shadow-2xl flex flex-col md:flex-row overflow-hidden border border-white/10 animate-fade-in relative">
+                <button onclick="closeModal()" class="absolute top-4 right-4 z-20 text-gray-400 hover:text-white text-2xl">&times;</button>
+                <div class="hidden md:flex md:w-1/3 bg-[#0f172a] p-8 flex-col relative overflow-hidden">
+                    <img id="modal-poster-bg" src="" class="absolute inset-0 w-full h-full object-cover opacity-20 blur-md">
+                    <div class="relative z-10 flex flex-col h-full"><img id="modal-poster" src="" class="w-48 rounded-lg shadow-2xl mb-6 self-center border border-white/10"><h3 id="modal-title" class="text-2xl font-bold text-white mb-2 text-center">Movie Title</h3><div class="mt-auto pt-6 border-t border-white/10"><div class="flex justify-between items-end"><span class="text-sm text-gray-400">ยอดรวมชำระ</span><span class="text-3xl font-bold text-blue-400" id="total-price-display">0 <span class="text-base text-gray-500 font-normal">THB</span></span></div></div></div>
+                </div>
+                <div class="flex-1 flex flex-col h-full bg-[#1e293b]">
+                    <div class="px-8 py-6 border-b border-white/5 bg-[#1e293b] z-10">
+                        <div class="flex items-center gap-4 text-sm font-medium">
+                            <span id="nav-step-1" class="text-blue-400 flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-xs">1</div> รอบฉาย</span>
+                            <span class="text-gray-600">/</span>
+                            <span id="nav-step-2" class="text-gray-500 flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-gray-700 text-gray-400 flex items-center justify-center text-xs">2</div> ที่นั่ง</span>
+                            <span class="text-gray-600">/</span>
+                            <span id="nav-step-3" class="text-gray-500 flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-gray-700 text-gray-400 flex items-center justify-center text-xs">3</div> ช่องทางการชำระเงิน</span>
+                            <span class="text-gray-600">/</span>
+                            <span id="nav-step-4" class="text-gray-500 flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-gray-700 text-gray-400 flex items-center justify-center text-xs">4</div> ชำระเงิน</span>
+                        </div>
+                    </div>
+                    
+                    <div class="flex-1 overflow-y-auto p-8 relative">
+                        <div id="step-time" class="space-y-6"><div class="text-center md:text-left"><h4 class="text-lg font-semibold text-white mb-1">เลือกรอบฉาย</h4><p class="text-sm text-gray-400">กรุณาเลือกโรงภาพยนตร์และเวลาที่ต้องการ</p></div><div id="showtimes-container" class="grid grid-cols-2 sm:grid-cols-3 gap-4"></div></div>
+                        
+                        <div id="step-seat" class="hidden h-full flex flex-col"><div class="text-center mb-6"><div class="screen-container"><div class="screen"></div></div><p class="text-xs text-gray-500 uppercase tracking-widest mt-2">SCREEN</p></div><div class="flex-1 flex items-center justify-center overflow-x-auto pb-4"><div id="seat-grid" class="grid grid-cols-8 gap-3 mx-auto"></div></div><div class="flex justify-center gap-6 text-sm text-gray-400 mt-6 border-t border-white/5 pt-4"><div class="flex items-center gap-2"><div class="w-4 h-4 rounded bg-[#334155]"></div> ว่าง</div><div class="flex items-center gap-2"><div class="w-4 h-4 rounded bg-blue-600 shadow-lg shadow-blue-600/30"></div> ที่เลือก</div><div class="flex items-center gap-2"><div class="w-4 h-4 rounded bg-[#1e293b] border border-gray-600 opacity-50"></div> จองแล้ว</div></div></div>
+                        
+                        <div id="step-method" class="hidden h-full flex flex-col">
+                            <h4 class="text-lg font-semibold text-white mb-6 text-center md:text-left">เลือกวิธีชำระเงิน</h4>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div onclick="selectPaymentMethod('promptpay')" id="pm-promptpay" class="payment-option bg-[#0f172a] p-6 rounded-xl text-center cursor-pointer border border-white/10 hover:border-blue-500 transition">
+                                    <div class="text-3xl mb-3">📱</div>
+                                    <p class="text-base font-bold text-white">QR PromptPay</p>
+                                    <p class="text-xs text-gray-500 mt-1">สแกนจ่ายได้ทุกธนาคาร</p>
+                                </div>
+                                <div onclick="selectPaymentMethod('card')" id="pm-card" class="payment-option bg-[#0f172a] p-6 rounded-xl text-center cursor-pointer border border-white/10 hover:border-blue-500 transition">
+                                    <div class="text-3xl mb-3">💳</div>
+                                    <p class="text-base font-bold text-white">Credit Card</p>
+                                    <p class="text-xs text-gray-500 mt-1">Visa, Mastercard, JCB</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="step-payment" class="hidden h-full flex flex-col">
+                            
+                            <div id="payment-area-promptpay" class="hidden flex-1 flex flex-col items-center justify-center text-center">
+                                <h4 class="text-lg font-semibold text-white mb-4">สแกนเพื่อชำระเงิน</h4>
+                                
+                                <div class="bg-white p-6 rounded-2xl shadow-xl mb-4 relative group">
+                                    <div id="qr-loading" class="flex flex-col items-center py-8 px-4"><div class="animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full mb-4"></div><p class="text-gray-500 text-sm">กำลังสร้าง QR Code...</p></div>
+                                    <div id="qr-display" class="hidden"><img id="qr-image" src="" class="w-48 h-48 object-contain mix-blend-multiply"></div>
+                                </div>
+                                <div id="payment-status-container" class="mt-4 text-yellow-500 text-sm animate-pulse"><i class="fas fa-clock"></i> รอการยืนยัน...</div>
+                            </div>
+
+                            <div id="payment-area-card" class="hidden flex-1 overflow-y-auto">
+                                <h4 class="text-lg font-semibold text-white mb-6 text-center">กรอกข้อมูลบัตรเครดิต</h4>
+                                <form id="card-form" class="space-y-4 max-w-sm mx-auto">
+                                    <div><label class="text-xs text-gray-400 uppercase">หมายเลขบัตร</label><input type="text" id="card-number" placeholder="0000 0000 0000 0000" maxlength="16" class="w-full bg-[#0f172a] border border-white/10 rounded-lg p-3 text-white focus:border-blue-500 outline-none"></div>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div><label class="text-xs text-gray-400 uppercase">ชื่อผู้ถือบัตร</label><input type="text" id="card-name" placeholder="Name on Card" class="w-full bg-[#0f172a] border border-white/10 rounded-lg p-3 text-white focus:border-blue-500 outline-none"></div>
+                                        <div class="grid grid-cols-2 gap-2">
+                                            <div><label class="text-xs text-gray-400 uppercase">Exp</label><input type="text" id="card-expiry" placeholder="MM/YY" class="w-full bg-[#0f172a] border border-white/10 rounded-lg p-3 text-white focus:border-blue-500 outline-none"></div>
+                                            <div><label class="text-xs text-gray-400 uppercase">CVV</label><input type="password" id="card-cvv" placeholder="123" maxlength="3" class="w-full bg-[#0f172a] border border-white/10 rounded-lg p-3 text-white focus:border-blue-500 outline-none"></div>
+                                        </div>
+                                    </div>
+                                    <button type="button" onclick="processCardPayment()" class="w-full bg-green-600 hover:bg-green-500 text-white py-3 rounded-xl font-bold shadow-lg mt-4 transition">
+                                        ชำระเงินทันที <span id="card-pay-amount"></span>
+                                    </button>
+                                </form>
+                            </div>
+
+                        </div>
+                    </div>
+                    <div class="p-6 border-t border-white/5 bg-[#1e293b] flex justify-between items-center z-10">
+                        <button onclick="handleBack()" id="btn-back" class="hidden text-gray-400 hover:text-white px-4 py-2 rounded-lg text-sm transition"><i class="fas fa-arrow-left mr-2"></i> ย้อนกลับ</button>
+                        <div class="flex-1"></div> <div id="footer-actions" class="w-full md:w-auto"><button id="btn-next-seat" onclick="handlePaymentNext()" disabled class="w-full md:w-auto bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white px-8 py-3 rounded-xl font-semibold transition shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2">เลือกวิธีการชำระเงิน <i class="fas fa-chevron-right"></i></button></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <input type="hidden" id="phone-input" value="-">
+
+    <script>
+        // --- AUTH & STATE ---
+        let currentUser = null;
+        let isLoginMode = true;
+        let bookingTimer = null; // เพิ่มบรรทัดนี้ด้านบนสุดของ script
+        let state = { 
+            movies: [], currentMovie: null, showtime: null, seats: [], bookedSeats: [], 
+            step: 1, unsubscribe: null, pollInterval: null, historyUnsubscribe: null,
+            paymentMethod: null 
+        };
+
+        const ROWS = 6; const COLS = 8;
+
+        // --- AUTHENTICATION ---
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                currentUser = user;
+                document.getElementById('auth-buttons').classList.add('hidden');
+                document.getElementById('user-profile').classList.remove('hidden');
+                document.getElementById('user-email-display').innerText = user.email;
+                closeAuthModal();
+            } else {
+                currentUser = null;
+                document.getElementById('auth-buttons').classList.remove('hidden');
+                document.getElementById('user-profile').classList.add('hidden');
+            }
+        });
+
+        function toggleUserDropdown(event) { event.stopPropagation(); document.getElementById('user-dropdown').classList.toggle('hidden'); }
+        window.onclick = function(event) { if (!document.getElementById('user-profile').contains(event.target)) { document.getElementById('user-dropdown').classList.add('hidden'); } }
+        function logout() { auth.signOut().then(() => showToast('ออกจากระบบเรียบร้อย')); }
+
+        function openAuthModal(mode) { isLoginMode = (mode === 'login'); updateAuthModalUI(); document.getElementById('auth-modal').classList.remove('hidden'); }
+        function closeAuthModal() { document.getElementById('auth-modal').classList.add('hidden'); }
+        function toggleAuthMode() { isLoginMode = !isLoginMode; updateAuthModalUI(); }
+        function updateAuthModalUI() { const t=document.getElementById('auth-title'), s=document.getElementById('auth-switch-text'), b=document.querySelector('#auth-form button'); if(isLoginMode){t.innerText='เข้าสู่ระบบ';s.innerText='ยังไม่มีบัญชี?';b.innerText='เข้าสู่ระบบ';}else{t.innerText='สมัครสมาชิก';s.innerText='มีบัญชีแล้ว?';b.innerText='สมัครสมาชิก';} }
+        document.getElementById('auth-form').addEventListener('submit', async(e)=>{ e.preventDefault(); const em=document.getElementById('auth-email').value, pw=document.getElementById('auth-password').value; try{ if(isLoginMode){await auth.signInWithEmailAndPassword(em,pw);showToast('สำเร็จ!','success');}else{await auth.createUserWithEmailAndPassword(em,pw);showToast('สมัครสำเร็จ!','success');} }catch(e){showToast(e.message,'error');} });
+
+        // --- HISTORY & TICKET ---
+        function openHistoryModal() { if(!currentUser) return; document.getElementById('history-modal').classList.remove('hidden'); document.getElementById('user-dropdown').classList.add('hidden'); loadUserBookingsRealtime(); }
+        function closeHistoryModal() { document.getElementById('history-modal').classList.add('hidden'); if (state.historyUnsubscribe) { state.historyUnsubscribe(); state.historyUnsubscribe = null; } }
+        function loadUserBookingsRealtime() {
+            const list = document.getElementById('history-list'); list.innerHTML = '<div class="flex justify-center py-10"><div class="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full"></div></div>';
+            state.historyUnsubscribe = db.collection('showtimes').onSnapshot(snap => {
+                let myBookings = []; snap.forEach(doc => { const d=doc.data(); (d.bookings||[]).filter(b=>b.userId===currentUser.uid).forEach(b=>{ const m=state.movies.find(x=>x.id===d.movieId); myBookings.push({...b, movieTitle:d.movieTitle, theater:d.theater, time:d.time, posterUrl:m?m.posterUrl:'https://placehold.co/100'}); }); });
+                myBookings.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
+                if(!myBookings.length) { list.innerHTML='<p class="text-center text-gray-500 mt-10">ไม่มีประวัติ</p>'; return; }
+                list.innerHTML = myBookings.map(b => `<div onclick='openTicketModal(${JSON.stringify(b)})' class="bg-[#0f172a] p-4 rounded-xl border border-white/5 hover:border-blue-500 cursor-pointer mb-3 flex gap-4 ${b.isUsed?'opacity-50 grayscale':''}"><img src="${b.posterUrl}" class="w-12 h-16 object-cover rounded"><div><div class="font-bold text-white">${b.movieTitle}</div><div class="text-xs text-gray-400">${b.time} | ${b.theater}</div><div class="text-xs ${b.isUsed?'text-gray-500':'text-green-400'} font-bold mt-1">${b.isUsed?'USED':'READY'}</div></div></div>`).join('');
+                const ticketModal = document.getElementById('ticket-modal'); if (!ticketModal.classList.contains('hidden')) { const currentRef = document.getElementById('show-ticket-ref').innerText.replace('REF: ', ''); const currentTicket = myBookings.find(b => b.ref === currentRef); if (currentTicket) openTicketModal(currentTicket); }
+            });
+        }
+        function openTicketModal(t) { 
+            document.getElementById('show-ticket-movie').innerText=t.movieTitle; document.getElementById('show-ticket-time').innerText=t.time; document.getElementById('show-ticket-theater').innerText=t.theater; document.getElementById('show-ticket-seats').innerText=t.seats.join(', '); document.getElementById('show-ticket-ref').innerText='REF: '+t.ref; document.getElementById('ticket-bg-image').src=t.posterUrl; document.getElementById('show-ticket-qr').src=`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${t.ref}`; 
+            const st=document.getElementById('ticket-status-display'), qi=document.getElementById('show-ticket-qr');
+            if(t.isUsed){ st.innerHTML='USED'; st.className='text-[10px] text-gray-500 font-bold mt-2'; qi.classList.add('opacity-20'); } else { st.innerHTML='READY'; st.className='text-[10px] text-green-400 font-bold mt-2'; qi.classList.remove('opacity-20'); }
+            document.getElementById('ticket-modal').classList.remove('hidden'); 
+        }
+        function closeTicketModal() { document.getElementById('ticket-modal').classList.add('hidden'); }
+
+        // --- CORE ---
+        const formatCurrency = (n) => new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB' }).format(n);
+        const showToast = (msg, type='success') => {
+            const t=document.createElement('div'); t.className=`toast ${type}`; t.innerHTML=`<div>${msg}</div>`; document.getElementById('toast-container').appendChild(t);
+            setTimeout(()=>t.classList.add('show'),10); setTimeout(()=>{t.classList.remove('show'); t.remove()},3000);
+        };
+        
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const snap = await db.collection('movies').get();
+                state.movies = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                state.movies.sort((a,b) => (b.createdAt?new Date(b.createdAt):0) - (a.createdAt?new Date(a.createdAt):0));
+                if (state.movies.length) { renderHero(state.movies[0]); renderMoviesGrid(state.movies); }
+            } catch(e) {}
+        });
+        function renderHero(m) { document.getElementById('hero-bg').style.backgroundImage=`url('${m.bannerUrl}')`; document.getElementById('hero-title').innerText=m.title; document.getElementById('hero-synopsis').innerText=m.synopsis; }
+        function renderMoviesGrid(movies) {
+            const grid = document.getElementById('movies-grid'); 
+            grid.innerHTML = '';
+            movies.forEach(movie => {
+                const card = document.createElement('div');
+                // เพิ่ม class 'group' และ hover styles
+                card.className = 'group bg-[#1e293b] rounded-xl overflow-hidden shadow-lg hover:shadow-2xl hover:shadow-blue-900/20 transition-all duration-300 cursor-pointer border border-white/5 relative';
+                card.onclick = () => openBookingModal(movie);
+                card.innerHTML = `
+                    <div class="aspect-[2/3] overflow-hidden relative">
+                        <img src="${movie.posterUrl}" class="w-full h-full object-cover group-hover:scale-110 transition duration-500">
+                        
+                        <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center p-4">
+                            <button class="bg-blue-600 text-white px-6 py-2 rounded-full font-bold shadow-lg transform translate-y-4 group-hover:translate-y-0 transition">
+                                จองตั๋ว
+                            </button>
+                        </div>
+                    </div>
+                    <div class="p-4">
+                        <h4 class="text-white font-semibold truncate group-hover:text-blue-400 transition">${movie.title}</h4>
+                        <p class="text-xs text-gray-500 mt-1">IMAX • 2D</p>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        async function openBookingModal(mId) {
+            if(!currentUser) { showToast('กรุณาเข้าสู่ระบบ','error'); openAuthModal('login'); return; }
+            const m = typeof mId === 'string' ? state.movies.find(x => x.id === mId) : mId;
+            if(!m) return;
+
+            state.currentMovie=m; state.step=1; state.seats=[]; state.paymentMethod=null;
+            document.getElementById('modal-title').innerText=m.title; document.getElementById('modal-poster').src=m.posterUrl; document.getElementById('modal-poster-bg').src=m.posterUrl;
+            document.getElementById('booking-modal').classList.remove('hidden'); updateStepUI();
+            
+            const c=document.getElementById('showtimes-container'); c.innerHTML='Loading...';
+            const snap = await db.collection('showtimes').where('movieId','==',m.id).get();
+            let shows=[]; snap.forEach(d=>shows.push({id:d.id,...d.data()})); shows.sort((a,b)=>a.time.localeCompare(b.time));
+            c.innerHTML = shows.map(s => `<div onclick="selectShowtime('${s.id}',${s.price})" class="bg-[#0f172a] p-4 rounded-xl text-center cursor-pointer hover:border-blue-500 border border-white/10"><div class="text-white font-bold">${s.time}</div><div class="text-xs text-gray-400">${s.theater}</div><div class="text-blue-400 mt-2">${s.price} ฿</div></div>`).join('');
+        }
+
+        function selectShowtime(id, price) {
+            state.showtime={id,price};
+            if(state.unsubscribe) state.unsubscribe();
+            state.unsubscribe = db.collection('showtimes').doc(id).onSnapshot(d=>{ state.bookedSeats=d.data().seats||[]; renderSeatGrid(); });
+            setStep(2);
+        }
+
+        function renderSeatGrid() {
+            const g=document.getElementById('seat-grid'); g.innerHTML='';
+            state.seats = state.seats.filter(s=>!state.bookedSeats.includes(s)); updatePriceUI();
+            for(let r=0; r<ROWS; r++) { for(let c=1; c<=COLS; c++) {
+                const id=String.fromCharCode(65+r)+c, d=document.createElement('div');
+                d.className = `seat flex items-center justify-center text-[10px] text-white/30 ${state.bookedSeats.includes(id)?'occupied':state.seats.includes(id)?'selected':''}`;
+                d.innerText=id; if(!state.bookedSeats.includes(id)) d.onclick=()=>toggleSeat(id);
+                g.appendChild(d);
+            }}
+        }
+        function toggleSeat(id) { state.seats.includes(id)?state.seats=state.seats.filter(s=>s!==id):state.seats.push(id); renderSeatGrid(); }
+        function updatePriceUI() {
+            const total = state.seats.length * (state.showtime?.price || 0);
+            document.getElementById('total-price-display').innerHTML = `${total.toLocaleString()} THB`;
+            const btn = document.getElementById('btn-next-seat');
+            if(btn) { btn.disabled=!state.seats.length; btn.innerHTML=state.seats.length?`เลือกวิธีการชำระเงิน <i class="fas fa-chevron-right ml-2"></i>` : 'กรุณาเลือกที่นั่ง'; }
+            document.getElementById('card-pay-amount').innerText = `(${total.toLocaleString()} THB)`;
+        }
+
+        // --- PAYMENT LOGIC ---
+        function handlePaymentNext() { setStep(3); }
+
+        function selectPaymentMethod(method) {
+            state.paymentMethod = method;
+            setStep(4);
+        }
+
+        function setStep(s) { state.step=s; updateStepUI(); }
+        function updateStepUI() {
+            ['step-time','step-seat','step-method','step-payment'].forEach(id=>document.getElementById(id).classList.add('hidden'));
+            const btn=document.getElementById('btn-next-seat'), footer=document.getElementById('footer-actions'), back=document.getElementById('btn-back');
+            
+            [1, 2, 3, 4].forEach(n => document.getElementById(`nav-step-${n}`).className = n === state.step ? "text-blue-400 flex items-center gap-2 font-bold" : (n < state.step ? "text-white flex items-center gap-2" : "text-gray-600 flex items-center gap-2"));
+
+            if(state.step===1) { 
+                document.getElementById('step-time').classList.remove('hidden'); 
+                footer.innerHTML=''; back.classList.add('hidden'); 
+            }
+            else if(state.step===2) { 
+                document.getElementById('step-seat').classList.remove('hidden'); 
+                footer.innerHTML=`<button id="btn-next-seat" onclick="handlePaymentNext()" disabled class="w-full md:w-auto bg-blue-600 text-white px-8 py-3 rounded-xl">เลือกวิธีการชำระเงิน</button>`;
+                back.classList.remove('hidden'); updatePriceUI(); setTimeout(renderSeatGrid,0);
+            }
+            else if(state.step===3) {
+                // Select Method Step
+                document.getElementById('step-method').classList.remove('hidden');
+                footer.innerHTML = ''; 
+                back.classList.remove('hidden');
+                if (state.pollInterval) clearInterval(state.pollInterval);
+            }
+            else { 
+    // Step 4 (Payment)
+    document.getElementById('step-payment').classList.remove('hidden'); 
+    footer.innerHTML=''; 
+    back.classList.remove('hidden');
+    
+    // [เพิ่มใหม่] เริ่มนับเวลาถอยหลัง 10 นาที
+    startBookingTimer();
+                
+                if(state.paymentMethod === 'promptpay') {
+                    document.getElementById('payment-area-promptpay').classList.remove('hidden');
+                    document.getElementById('payment-area-card').classList.add('hidden');
+                    generateQRCode();
+                } else {
+                    document.getElementById('payment-area-promptpay').classList.add('hidden');
+                    document.getElementById('payment-area-card').classList.remove('hidden');
+                    if (state.pollInterval) clearInterval(state.pollInterval);
+                }
+            }
+        }
+        function handleBack() { if(state.step>1) { if(state.step===4 && state.pollInterval) clearInterval(state.pollInterval); setStep(state.step-1); } }
+        function closeModal() { document.getElementById('booking-modal').classList.add('hidden'); if(state.unsubscribe) state.unsubscribe(); if(state.pollInterval) clearInterval(state.pollInterval); state.seats=[]; state.step=1;if(bookingTimer) { clearInterval(bookingTimer); document.getElementById('booking-countdown')?.classList.add('hidden'); }
+} 
+
+        async function processCardPayment() {
+            const number = document.getElementById('card-number').value.replace(/\s/g, '');
+            const name = document.getElementById('card-name').value;
+            const expiry = document.getElementById('card-expiry').value.split('/');
+            const cvv = document.getElementById('card-cvv').value;
+
+            if(!number || !name || expiry.length!=2 || !cvv) { showToast('กรุณากรอกข้อมูลบัตรให้ครบ', 'error'); return; }
+
+            const btn = document.querySelector('#card-form button'); const originalText = btn.innerText;
+            btn.innerText = 'กำลังดำเนินการ...'; btn.disabled = true;
+
+            const cardObject = { name, number, expiration_month: expiry[0], expiration_year: 2000+parseInt(expiry[1]), security_code: cvv };
+
+            Omise.createToken('card', cardObject, async function(statusCode, response) {
+                if (response.object == 'token') {
+                    try {
+                        const total = state.seats.length * state.showtime.price;
+                        const res = await fetch(`${API_BASE_URL}/charge-card`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: total, token: response.id, email: currentUser.email }) });
+                        const data = await res.json();
+                        if (data.success) {
+                            if (data.status === 'successful') await saveBooking(data.chargeId, 'CREDIT-CARD');
+                            else { showToast('ชำระเงินไม่สำเร็จ: ' + (data.message || data.status), 'error'); btn.innerText = originalText; btn.disabled = false; }
+                        } else { showToast('Charge Failed: ' + data.message, 'error'); btn.innerText = originalText; btn.disabled = false; }
+                    } catch(e) { showToast('Server Error', 'error'); btn.innerText = originalText; btn.disabled = false; }
+                } else { showToast('ข้อมูลบัตรไม่ถูกต้อง: ' + response.message, 'error'); btn.innerText = originalText; btn.disabled = false; }
+            });
+        }
+
+        function startBookingTimer() {
+    if(bookingTimer) clearInterval(bookingTimer);
+    
+    // สร้าง Element แสดงเวลา (ถ้ายังไม่มี)
+    let timerDisplay = document.getElementById('booking-countdown');
+    if(!timerDisplay) {
+        timerDisplay = document.createElement('div');
+        timerDisplay.id = 'booking-countdown';
+        timerDisplay.className = 'fixed top-20 right-6 bg-red-600 text-white px-4 py-2 rounded-lg font-bold shadow-lg z-50 animate-pulse';
+        document.body.appendChild(timerDisplay);
+    }
+    timerDisplay.classList.remove('hidden');
+
+    let timeLeft = 180; // 10 นาที (วินาที)
+    
+    bookingTimer = setInterval(() => {
+        timeLeft--;
+        let m = Math.floor(timeLeft / 60);
+        let s = timeLeft % 60;
+        timerDisplay.innerHTML = `<i class="fas fa-clock mr-2"></i> เหลือเวลา ${m}:${s.toString().padStart(2,'0')} นาที`;
+
+        if(timeLeft <= 0) {
+            clearInterval(bookingTimer);
+            alert('หมดเวลาทำรายการ กรุณาทำรายการใหม่');
+            location.reload(); // รีเฟรชหน้าเว็บ
+        }
+    }, 1000);
+}
+
+        async function generateQRCode() {
+            const total = state.seats.length * state.showtime.price;
+            document.getElementById('qr-loading').classList.remove('hidden'); document.getElementById('qr-display').classList.add('hidden');
+            try {
+                const res = await fetch(`https://paym.onrender.com/create-qr`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ amount: total }) });
+                const data = await res.json();
+                if(data.success) {
+                    document.getElementById('qr-image').src=data.qrImage; document.getElementById('qr-loading').classList.add('hidden'); document.getElementById('qr-display').classList.remove('hidden'); startPolling(data.chargeId);
+                }
+            } catch(e) { showToast('Error API', 'error'); }
+        }
+
+        function startPolling(cid) {
+            if(state.pollInterval) clearInterval(state.pollInterval);
+            state.pollInterval = setInterval(async()=>{
+                try {
+                    const res = await fetch(`https://paym.onrender.com/check-status/${cid}`); const d = await res.json();
+                    if(d.status==='successful') { clearInterval(state.pollInterval); saveBooking(cid, 'PROMPTPAY'); }
+                } catch(e){}
+            }, 3000);
+        }
+
+        async function saveBooking(chargeId, method) {
+            const refCode = 'CX-' + Math.floor(100000 + Math.random() * 900000);
+            const showtimeRef = db.collection('showtimes').doc(state.showtime.id);
+            try {
+                await db.runTransaction(async (t) => {
+                    const doc = await t.get(showtimeRef);
+                    if (state.seats.some(s => (doc.data().seats||[]).includes(s))) throw "Seats taken";
+                    t.update(showtimeRef, {
+                        seats: firebase.firestore.FieldValue.arrayUnion(...state.seats),
+                        bookings: firebase.firestore.FieldValue.arrayUnion({ userId: currentUser.uid, userEmail: currentUser.email, phone: document.getElementById('phone-input').value, seats: state.seats, ref: refCode, chargeId, method, amount: state.seats.length * state.showtime.price, timestamp: new Date().toISOString(), isUsed: false })
+                    });
+                });
+                showToast(`จองสำเร็จ! (${method})`, 'success'); setTimeout(closeModal, 2000);
+            } catch(e) { showToast('เกิดข้อผิดพลาด (ที่นั่งอาจถูกแย่ง)', 'error'); }
+        }
+    </script>
+</body>
+</html>
